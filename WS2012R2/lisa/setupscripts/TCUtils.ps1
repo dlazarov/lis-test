@@ -2355,3 +2355,159 @@ $DM_scriptBlock = {
     return $retVal
   }
 }
+
+#######################################################################
+#
+# GenerateBulkIp()
+#
+#######################################################################
+function GenerateBulkIp {
+
+    [CmdletBinding()]
+
+    Param
+    (
+        [Parameter(ParameterSetName="ipv4", Mandatory=$true)]
+        [Parameter(Position=0)]
+        [switch]
+        $ipv4,
+
+        [Parameter(ParameterSetName="ipv6", Mandatory=$true)]
+        [Parameter(Position=0)]
+        [switch]
+        $ipv6,
+
+        [Parameter(ParameterSetName="ipv4", Mandatory=$true)]
+        [Parameter(ParameterSetName="ipv6", Mandatory=$true)]
+        [ValidateRange(1, 254)]
+        [int]
+        $bulk = 1,
+
+        [Parameter(ParameterSetName="ipv4", Mandatory=$true)]
+        [ValidateSet("a","b","c", IgnoreCase=$true)]
+        [string]
+        $class = "c",
+
+        [Parameter(ParameterSetName="ipv4")]
+        [string]
+        $netmaskIpv4,
+
+        [Parameter(ParameterSetName="ipv6")]
+        [string]
+        $netmaskIpv6
+    )
+
+    <#
+    .Synopsis
+        Returns an array containing the netmask at index 0 and one or multiple
+        IPs (IPv4 or IPv6) from the specified class (IPv4) unused by
+        any VM network adapter
+    .Description
+        Generates and returns an array of up to 254 unique IPs from the
+        specified class (IPv4), based in the same subnet, unless the requested
+        amount exceedes the available IPs in the subnet. Default netmask is
+        255.255.255.0 (up to 254 hosts on the subnet).
+    .Parameter ipv4
+        Parameter used to get IPv4 IPs
+    .Parameter ipv6
+        Parameter used to get IPv6 IPs
+    .Parameter bulk
+        The amount of IPs to generate. Default value is 1
+    .Parameter class
+        The class in which the IPv4 will be based. Default value is 'c'
+            Class a: 10.0.0.x
+            Class b: 172.16.0.x
+            Class c: 192.168.0.x
+    .Parameter netmaskIpv4
+        Parameter used to pass an IPv4 netmask.
+        Default value is 255.255.255.0
+    .Parameter netmaskIpv6
+        Parameter used to pass an IPv6 netmask.
+        Default value is 64
+    .Example
+        GenerateBulkIpv4 -Ipv4 -bulk 2 -class a -netmaskIpv4 255.255.0.0
+    #>
+
+    [string[]]$usedIps = (
+        Get-VMNetworkAdapter * | where {$_.SwitchName -eq "Internal" -Or
+            $_.Switchname -eq "Private"}).IPAddresses
+
+    [string[]]$result = @()
+
+    if ($ipv4.IsPresent)
+    {
+        [int]$finalOctet = 1
+        [int]$i = $null
+        if(-not $netmaskIpv4)
+        {
+            $netmaskIpv4 = "255.255.255.0"
+        }
+        $result += $netmaskIpv4
+        switch ($class)
+        {
+            "a" { $newAddress = "10.0.0"}
+            "b" { $newAddress = "172.16.0"}
+            "c" { $newAddress = "192.168.0"}
+        }
+
+        while ($i -lt $bulk -and $finalOctet -lt 254)
+        {
+            if(-not $usedIps)
+            {
+                $ipUsed = $False
+            }
+            else
+            {
+                $ipUsed = $usedIps.Contains("$newAddress.$finalOctet")
+            }
+            if (!($ipUsed -or $result.Contains("$newAddress.$finalOctet")))
+            {
+                $result += "$newAddress.$finalOctet"
+                $i++
+            }
+            $finalOctet++
+        }
+    }
+    elseif ($ipv6.IsPresent)
+    {
+        [int]$finalHexPair = 1
+        [int]$i = $null
+        if(-not $netmaskIpv6)
+        {
+            $netmaskIpv6 = "64"
+        }
+        $result += $netmaskIpv6
+        $newAddress = "fd00::4"
+        while ($i -lt $bulk -and $finalHexPair -lt 254)
+        {
+            if (-not $usedIps)
+            {
+                $ipUsed = $False
+            }
+            else
+            {
+                $ipUsed = $usedIps.Contains("$($newAddress):$($finalHexPair)")
+            }
+
+            if (!($ipUsed -or $result.Contains("$($newAddress):$($finalHexPair)")))
+            {
+                $result += "$($newAddress):$($finalHexPair)"
+                $i++
+            }
+            $finalHexPair++
+        }
+    }
+
+    if($result.Length -lt $bulk)
+    {
+        Write-Error -Message "ERROR: Cannot generate $($bulk) IPs because
+        too many are used on the subnet"
+        return $false
+    }
+    else
+    {
+        return $result
+    }
+
+    return $false
+}
