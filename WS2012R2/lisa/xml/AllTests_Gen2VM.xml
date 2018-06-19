@@ -716,9 +716,7 @@
         <testParams>
             <param>NIC=NetworkAdapter,Private,Private,001600112200</param>
             <param>TC_COVERED=NET-06</param>
-            <param>STATIC_IP=10.10.10.10</param>
-            <param>STATIC_IP2=10.10.10.20</param>
-            <param>NETMASK=255.255.0.0</param>
+            <param>IP_STATIC=ipv4,2,a,255.255.0.0</param>
         </testParams>
         <testScript>setupscripts\NET_PRIVATE_NETWORK.ps1</testScript>
         <files>remote-scripts/ica/utils.sh</files>

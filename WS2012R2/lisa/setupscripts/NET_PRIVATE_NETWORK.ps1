@@ -261,6 +261,9 @@ $failIP2 = $null
 #Connection type to switch to
 $switch_nic = $null
 
+# Generate Static IP
+$ipStaticParam = $null
+
 # change working directory to root dir
 $testParams -match "RootDir=([^;]+)"
 if (-not $?)
@@ -341,15 +344,16 @@ foreach ($p in $params)
     "VM2NAME" { $vm2Name = $fields[1].Trim() }
     "SshKey"  { $sshKey  = $fields[1].Trim() }
     "ipv4"    { $ipv4    = $fields[1].Trim() }
-    "STATIC_IP" { $vm1StaticIP = $fields[1].Trim() }
+    "STATIC_IP1" { $vm1StaticIP = $fields[1].Trim() }
     "STATIC_IP2" { $vm2StaticIP = $fields[1].Trim() }
     "PING_FAIL" { $failIP1 = $fields[1].Trim() }
     "PING_FAIL2" { $failIP2 = $fields[1].Trim() }
-	"TC_COVERED" { $tc_covered = $fields[1].Trim() }
+    "TC_COVERED" { $tc_covered = $fields[1].Trim() }
     "SWITCH" { $switch_nic = $fields[1].Trim() }
     "NETMASK" { $netmask = $fields[1].Trim() }
     "LEAVE_TRAIL" { $leaveTrail = $fields[1].Trim() }
     "SnapshotName" { $SnapshotName = $fields[1].Trim() }
+    "IP_STATIC" { $ipStaticParam = $fields[1].Trim() }
     "NIC"
     {
         $nicArgs = $fields[1].Split(',')
@@ -389,7 +393,6 @@ foreach ($p in $params)
         }
 
         #
-        #
         # Make sure the network exists
         #
         $vmSwitch = Get-VMSwitch -Name $networkName -ComputerName $hvServer
@@ -427,6 +430,50 @@ foreach ($p in $params)
         }
     }
     default   {}  # unknown param - just ignore it
+    }
+}
+
+# Checking if ipStaticParam exists
+if ($ipStaticParam)
+{
+    # Split ipStaticParam to get individual arguments for GenerateBulkIp function
+    $paramValue = $ipStaticParam.Trim().Split('=')
+    $staticIpArgs = $paramValue.Split(',')
+    $IpArray = @()
+    $bulk = $staticIpArgs[1].Trim()
+
+    if ($staticIpArgs[0].Trim() -eq "ipv4" -and $staticIpArgs.Length -in 3..4)
+    {
+        $class = $staticIpArgs[2].Trim()
+        $netmaskParam = $staticIpArgs[3]
+        $IpArray = GenerateBulkIp -ipv4 -bulk $bulk -class $class -netmaskIpv4 $netmaskParam
+    }
+    elseif ($staticIpArgs[0].Trim() -eq "ipv6" -and $staticIpArgs.Length -in 2..3)
+    {
+        $netmaskParam = $staticIpArgs[2]
+        $IpArray = GenerateBulkIp -ipv6 -bulk $bulk -netmaskIpv6 $netmaskParam
+    }
+    else 
+    {
+        "Error: Incorrect arguments for IP_STATIC: $($paramValue)"
+        return $false
+    }
+
+    if (-not $IpArray)
+    {
+        "Error: Failed to generate static IPs"
+        return $false
+    }
+    else
+    {
+        $netmask = $IpArray[0]
+        $i = 1
+
+        while ($i -le $bulk)
+        {
+            New-Variable -Name "vm$($i)StaticIP" -Value $IpArray[$i] -Force
+            $i++
+        }
     }
 }
 
@@ -699,7 +746,7 @@ if ($switch_nic)
         Write-Output "Failed to switch connection type for $vm2Name" | Tee-Object -Append -file $summaryLog
         return $False
     }
-	if ($retVal1 -and $retVal2)
+    if ($retVal1 -and $retVal2)
     { Write-Output "Successfully switched connection type for both VMs." | Tee-Object -Append -file $summaryLog}
 }
 
